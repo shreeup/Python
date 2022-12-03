@@ -1,0 +1,85 @@
+!pip install pydub SpeechRecognition
+!pip install youtube_dl pydub 
+from __future__ import unicode_literals
+!pip install ffmpeg-python
+import youtube_dl
+import ffmpeg 
+
+
+import speech_recognition as sr
+import os
+from pydub import AudioSegment
+from pydub.silence import split_on_silence
+
+import shutil
+r = sr.Recognizer()
+
+ydl_opts = {
+    'format': 'bestaudio/best',
+    'outtmpl': 'output.%(ext)s',
+    'postprocessors': [{
+        'key': 'FFmpegExtractAudio',
+        'preferredcodec': 'wav',
+    }],
+}
+
+def extract_text(path):
+    """
+    splitting the large audio file into chunks
+    and apply speech recognition on each of these chunks
+    then delete the chunks and only return the text
+    """
+
+    # open the audio file using pydub
+    sound = AudioSegment.from_wav(path)
+
+    # split audio sound where silence is 700 miliseconds or more and get chunks
+    chunks = split_on_silence(sound,
+                              # experiment with this value for your target audio file
+                              min_silence_len=500,
+                              # adjust this per requirement
+                              silence_thresh=sound.dBFS - 14,
+                              # keep the silence for 1 second, adjustable as well
+                              keep_silence=500,
+                              )
+
+    # create a directory to store the audio chunks
+    folder_name = "dummy"
+    if not os.path.isdir(folder_name):
+        os.mkdir(folder_name)
+
+    whole_text = ""
+
+    # process each chunk
+    for i, audio_chunk in enumerate(chunks, start=1):
+        # export audio chunk and save it in
+        # the `folder_name` directory.
+        chunk_filename = os.path.join(folder_name, f"chunk{i}.wav")
+        audio_chunk.export(chunk_filename, format="wav")
+        # recognize the chunk
+        with sr.AudioFile(chunk_filename) as source:
+            audio_listened = r.record(source)
+            # try converting it to text
+            try:
+                text = r.recognize_google(audio_listened)
+            except sr.UnknownValueError:
+                continue
+            else:
+                text = f"{text.capitalize()}."
+                whole_text += text
+
+    # deleting the temp folder
+    shutil.rmtree("dummy")
+
+    # return the text for all chunks detected
+    return whole_text
+
+with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+    url=input("Enter Youtube URL: ")
+    searchtext=input("Enter Text you want to search ")
+    ydl.download([url])
+    stream = ffmpeg.input('output.m4a')
+    stream = ffmpeg.output(stream, 'output.wav')
+    text=extract_text('output.wav')
+    print(f'The word "{searchtext}" appeared {text.count("deliver")} times')
+    
